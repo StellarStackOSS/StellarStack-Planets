@@ -46,9 +46,12 @@ jobs:
             if [ -n "$filter" ] && [[ "$tag" != *"$filter"* ]]; then
               continue
             fi
-            if grep -q '\./\.\./' "$dockerfile"; then
-              # `COPY ./../something` — needs the parent directory in
-              # the context so the `..` lookup lands inside it.
+            if grep -qE '(^|[[:space:]])\.{0,1}\.\./' "$dockerfile"; then
+              # COPY/ADD references something one level up — either
+              # `./../entrypoint.sh` (java/, nodejs/, python/) or bare
+              # `../entrypoint.sh` (go/). Either way the build context
+              # has to be the parent directory so BuildKit can resolve
+              # the `..` lookup inside it.
               context="$(dirname "$dir")"
             else
               context="$dir"
