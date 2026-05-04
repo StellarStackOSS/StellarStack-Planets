@@ -40,3 +40,10 @@ ghcr.io/stellarstackoss/planets:python_3.10
 
 The workflow runs on every push to `main` and can be triggered manually
 with an optional substring filter to rebuild a subset (e.g. `java_25`).
+
+### Per-planet platform overrides
+
+Drop a `.platforms` file next to a Dockerfile (single line,
+comma-separated) to constrain that planet's build. Used for Source-
+engine and Rust which depend on `:i386` packages that aren't published
+in the arm64 Debian archives, so they're amd64-only.

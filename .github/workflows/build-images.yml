@@ -54,11 +54,21 @@ jobs:
               context="$dir"
             fi
             file="$dir/Dockerfile"
+            # Per-planet platform override: a `.platforms` file next to
+            # the Dockerfile (single line, comma-separated) constrains
+            # the build, e.g. for Source/Rust which need i386 packages
+            # that aren't available in the arm64 Debian archives.
+            if [ -f "$dir/.platforms" ]; then
+              platforms="$(tr -d '[:space:]' < "$dir/.platforms")"
+            else
+              platforms="linux/amd64,linux/arm64"
+            fi
             json=$(echo "$json" | jq \
               --arg t "$tag" \
               --arg c "$context" \
               --arg f "$file" \
-              '. + [{"tag": $t, "context": $c, "file": $f}]')
+              --arg p "$platforms" \
+              '. + [{"tag": $t, "context": $c, "file": $f, "platforms": $p}]')
           done < <(find . -name Dockerfile -not -path './.git/*' | sort)
           echo "matrix=$(echo "$json" | jq -c .)" >> "$GITHUB_OUTPUT"
           echo "$json" | jq .
@@ -99,7 +109,7 @@ jobs:
         with:
           context: ${{ matrix.entry.context }}
           file: ${{ matrix.entry.file }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.entry.platforms }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           # Per-tag registry cache so each planet's incremental rebuilds
