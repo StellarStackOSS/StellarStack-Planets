@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       filter:
-        description: "Optional substring to limit which images build (e.g. java/21)"
+        description: "Optional substring to limit which images build (e.g. java_25)"
         required: false
         default: ""
 
@@ -14,12 +14,20 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/stellarstackoss/planets
+
 jobs:
   # Walk the tree, find every Dockerfile, and emit a matrix of
-  # { context, image } pairs. Each entry maps to one buildx job that
-  # publishes a multi-arch (amd64 + arm64) image to GHCR under the
-  # repo's namespace, e.g. `java/21/Dockerfile` →
-  #   ghcr.io/<owner>/<repo>/java/21:latest
+  #   { tag, context, file }
+  # entries. The image is always `${IMAGE}` (single GHCR package); the
+  # tag is the directory path with `/` → `_` (e.g. `java/21` → `java_21`,
+  # `games/rust` → `games_rust`).
+  #
+  # Build context is picked per-Dockerfile:
+  #   - if the Dockerfile uses `./../` (shared entrypoint a level up),
+  #     context = parent of the Dockerfile's directory
+  #   - otherwise, context = the Dockerfile's own directory
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -29,21 +37,29 @@ jobs:
       - id: list
         run: |
           set -euo pipefail
-          repo_lc="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           filter='${{ github.event.inputs.filter }}'
-          entries=$(find . -name Dockerfile -not -path './.git/*' \
-            | sed 's|^\./||; s|/Dockerfile$||' \
-            | sort)
           json='[]'
-          while IFS= read -r dir; do
-            [ -z "$dir" ] && continue
-            if [ -n "$filter" ] && [[ "$dir" != *"$filter"* ]]; then
+          while IFS= read -r dockerfile; do
+            dir="${dockerfile%/Dockerfile}"
+            dir="${dir#./}"
+            tag="${dir//\//_}"
+            if [ -n "$filter" ] && [[ "$tag" != *"$filter"* ]]; then
               continue
             fi
-            image="ghcr.io/${repo_lc}/${dir}"
-            json=$(echo "$json" | jq --arg c "$dir" --arg i "$image" \
-              '. + [{"context": $c, "image": $i}]')
-          done <<< "$entries"
+            if grep -q '\./\.\./' "$dockerfile"; then
+              # `COPY ./../something` — needs the parent directory in
+              # the context so the `..` lookup lands inside it.
+              context="$(dirname "$dir")"
+            else
+              context="$dir"
+            fi
+            file="$dir/Dockerfile"
+            json=$(echo "$json" | jq \
+              --arg t "$tag" \
+              --arg c "$context" \
+              --arg f "$file" \
+              '. + [{"tag": $t, "context": $c, "file": $f}]')
+          done < <(find . -name Dockerfile -not -path './.git/*' | sort)
           echo "matrix=$(echo "$json" | jq -c .)" >> "$GITHUB_OUTPUT"
           echo "$json" | jq .
 
@@ -76,18 +92,18 @@ jobs:
         id: tags
         run: |
           short="${GITHUB_SHA::7}"
-          echo "tags=${{ matrix.entry.image }}:latest,${{ matrix.entry.image }}:${short}" >> "$GITHUB_OUTPUT"
+          echo "tags=${IMAGE}:${{ matrix.entry.tag }},${IMAGE}:${{ matrix.entry.tag }}-${short}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push (linux/amd64, linux/arm64)
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.entry.context }}
-          file: ${{ matrix.entry.context }}/Dockerfile
+          file: ${{ matrix.entry.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          # Reuse the image's previous build as a cache mount so subsequent
-          # runs only rebuild what changed in that planet's Dockerfile.
-          cache-from: type=registry,ref=${{ matrix.entry.image }}:buildcache
-          cache-to: type=registry,ref=${{ matrix.entry.image }}:buildcache,mode=max
+          # Per-tag registry cache so each planet's incremental rebuilds
+          # are cheap without one planet evicting another's layers.
+          cache-from: type=registry,ref=${{ env.IMAGE }}:${{ matrix.entry.tag }}-buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:${{ matrix.entry.tag }}-buildcache,mode=max
           provenance: false

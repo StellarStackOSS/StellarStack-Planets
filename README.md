@@ -21,19 +21,22 @@ python/     CPython images
 
 Every `Dockerfile` in this repo is built for **`linux/amd64`** and
 **`linux/arm64`** by the `Build planet images` workflow and pushed to
-GitHub Container Registry. The image name follows the directory path:
+GitHub Container Registry as a single package (`planets`) with one tag
+per planet. The tag is the directory path with `/` → `_`:
 
 ```
-ghcr.io/stellarstackoss/stellarstack-planets/<path>:latest
-ghcr.io/stellarstackoss/stellarstack-planets/<path>:<short-sha>
+ghcr.io/stellarstackoss/planets:<category>_<variant>
+ghcr.io/stellarstackoss/planets:<category>_<variant>-<short-sha>
 ```
 
-Example:
+Examples:
 
 ```
-ghcr.io/stellarstackoss/stellarstack-planets/java/21:latest
-ghcr.io/stellarstackoss/stellarstack-planets/games/rust:latest
+ghcr.io/stellarstackoss/planets:java_25
+ghcr.io/stellarstackoss/planets:games_rust
+ghcr.io/stellarstackoss/planets:nodejs_20
+ghcr.io/stellarstackoss/planets:python_3.10
 ```
 
 The workflow runs on every push to `main` and can be triggered manually
-with an optional substring filter to rebuild a subset (e.g. `java/21`).
+with an optional substring filter to rebuild a subset (e.g. `java_25`).
