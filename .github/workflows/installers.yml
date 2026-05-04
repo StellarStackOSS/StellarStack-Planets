@@ -24,7 +24,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tag: [alpine, debian]
+        # `installers/debian` pulls in :i386 packages (lib32gcc-s1,
+        # libsdl2-2.0-0:i386) that aren't published in the arm64 Debian
+        # archives — pin it to amd64. Alpine has no such constraint.
+        include:
+          - tag: alpine
+            platforms: linux/amd64,linux/arm64
+          - tag: debian
+            platforms: linux/amd64
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -38,7 +45,7 @@ jobs:
         with:
           context: ./installers/${{ matrix.tag }}
           file: ./installers/${{ matrix.tag }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ env.IMAGE }}:installers_${{ matrix.tag }}
           provenance: false
